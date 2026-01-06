@@ -1,64 +1,128 @@
 import React from 'react';
-import { Menu, Plus, Grid, Home as HomeIcon, Shirt } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
+import { Edit, Heart, Search } from 'lucide-react';
 
 const Dashboard = () => {
+    // TODO: Implement dynamic image loading based on user gender (male/female).
+    // The images for the Hero section and Wardrobe items should be selected 
+    // based on whether the user is male or female.
+    // Currently using placeholders as requested.
+
     return (
-        <div className="min-h-screen bg-off-white flex">
-            {/* Sidebar */}
-            <aside className="w-64 bg-white border-r border-gray-100 hidden md:flex flex-col p-6">
-                <h2 className="font-script text-3xl mb-12 text-center text-sage-green">I & O</h2>
+        <div className="bg-off-white min-h-screen flex flex-col font-sans text-charcoal">
+            <Navbar />
 
-                <nav className="flex flex-col gap-6 text-sm uppercase tracking-widest text-gray-400 font-medium">
-                    <Link to="/" className="flex items-center gap-3 hover:text-charcoal transition-colors">
-                        <HomeIcon className="w-5 h-5" /> Home
-                    </Link>
-                    <div className="flex items-center gap-3 text-charcoal">
-                        <Grid className="w-5 h-5" /> The Vault
+            {/* Hero Section */}
+            <header className="relative bg-[#A3B19C] min-h-[400px] flex items-center overflow-hidden">
+                <div className="absolute inset-x-0 bottom-0 top-10 flex justify-end pr-20 md:pr-40">
+                    <div className="bg-[#B5C1AE] w-[400px] h-[500px] rounded-t-full relative translate-y-20 flex items-center justify-center">
+                        {/* Dynamic Image Placeholder */}
+                        {/* TODO: Insert dynamic Hero image here based on user.gender */}
+                        <div className="text-white/50 font-script text-2xl">User Style Image</div>
                     </div>
-                </nav>
-            </aside>
-
-            {/* Main Content */}
-            <main className="flex-1 p-6 md:p-12">
-                <header className="flex justify-between items-center mb-12">
-                    <div className="md:hidden">
-                        <Menu className="w-6 h-6 text-charcoal" />
-                    </div>
-                    <h1 className="text-2xl font-sans uppercase tracking-widest text-charcoal">My Wardrobe</h1>
-                    <div className="w-10 h-10 bg-sage-green rounded-full flex items-center justify-center text-off-white font-script text-xl shadow-md">
-                        U
-                    </div>
-                </header>
-
-                {/* Filter Row */}
-                <div className="flex gap-4 mb-8 overflow-x-auto pb-4 md:pb-0">
-                    {['All', 'Tops', 'Bottoms', 'Shoes', 'Accessories'].map((filter, i) => (
-                        <button key={filter} className={`px-6 py-2 rounded-full text-xs uppercase tracking-wider border transition-colors ${i === 0 ? 'bg-charcoal text-white border-charcoal' : 'bg-transparent border-gray-200 hover:border-sage-green'}`}>
-                            {filter}
-                        </button>
-                    ))}
                 </div>
 
-                {/* Empty State / Grid Placeholder */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    <div className="aspect-[3/4] border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center text-gray-300 hover:border-sage-green hover:text-sage-green transition-colors cursor-pointer group">
-                        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center group-hover:bg-sage-green/10 transition-colors mb-2">
-                            <Plus className="w-6 h-6" />
+                <div className="max-w-7xl mx-auto w-full px-6 md:px-12 relative z-10 grid md:grid-cols-2">
+                    <div className="flex flex-col justify-center text-white pt-20 pb-20 md:pb-0">
+                        <p className="font-sans text-xs tracking-[0.2em] uppercase mb-2 opacity-80">Here's the Vibe</p>
+                        <h1 className="font-sans text-5xl md:text-6xl font-medium uppercase leading-tight mb-4">
+                            Your Profile<br />Style Hub
+                        </h1>
+                    </div>
+                </div>
+            </header>
+
+            {/* Wardrobe Section (Refactored to be full width) */}
+            {/* Using bg-[#A3B19C] to match Hero background as requested */}
+            <main className="w-full bg-[#A3B19C] text-white py-16 flex-grow">
+                <div className="max-w-7xl mx-auto px-6 md:px-12">
+
+                    <h2 className="text-xl font-sans mb-8 uppercase tracking-widest text-center md:text-left text-white">Your Wardrobe</h2>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+                        {/* Item 1 */}
+                        <div className="group">
+                            <div className="aspect-[3/4] bg-white/10 mb-3 relative overflow-hidden flex items-center justify-center border border-white/20">
+                                {/* Placeholder */}
+                                <span className="text-white/70 text-xs uppercase">Dynamic Item 1</span>
+
+                                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="bg-white p-1.5 rounded-full shadow-sm cursor-pointer hover:text-red-500 text-charcoal">
+                                        <Heart size={16} />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <p className="font-script text-lg">Basic Tee Bundle</p>
+                                <p className="text-xs text-white/70 font-sans tracking-wide">$ 39.00</p>
+                            </div>
                         </div>
-                        <span className="text-xs uppercase tracking-widest">Add Item</span>
+
+                        {/* Item 2 */}
+                        <div className="group">
+                            <div className="aspect-[3/4] bg-white/10 mb-3 relative overflow-hidden flex items-center justify-center border border-white/20">
+                                {/* Placeholder */}
+                                <span className="text-white/70 text-xs uppercase">Dynamic Item 2</span>
+
+                                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="bg-white p-1.5 rounded-full shadow-sm cursor-pointer hover:text-red-500 text-charcoal">
+                                        <Heart size={16} />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <p className="font-script text-lg">Utility Jacket</p>
+                                <p className="text-xs text-white/70 font-sans tracking-wide">$ 115.00</p>
+                            </div>
+                        </div>
+
+                        {/* Item 3 */}
+                        <div className="group">
+                            <div className="aspect-[3/4] bg-white/10 mb-3 relative overflow-hidden flex items-center justify-center border border-white/20">
+                                <div className="text-center p-4">
+                                    <span className="text-white/70 text-xs uppercase">Dynamic Item 3</span>
+                                </div>
+                                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="bg-white p-1.5 rounded-full shadow-sm cursor-pointer hover:text-red-500 text-charcoal">
+                                        <Heart size={16} />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <p className="font-script text-lg">Evening Elegance</p>
+                                <p className="text-xs text-white/70 font-sans tracking-wide">$ 90.00</p>
+                            </div>
+                        </div>
+
+                        {/* Item 4 */}
+                        <div className="group">
+                            <div className="aspect-[3/4] bg-white/10 mb-3 relative overflow-hidden flex items-center justify-center border border-white/20">
+                                <div className="text-center p-4">
+                                    <span className="text-white/70 text-xs uppercase">Dynamic Item 4</span>
+                                </div>
+                                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="bg-white p-1.5 rounded-full shadow-sm cursor-pointer hover:text-red-500 text-charcoal">
+                                        <Heart size={16} />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <p className="font-script text-lg">Comfy Cargos</p>
+                                <p className="text-xs text-white/70 font-sans tracking-wide">$ 55.00</p>
+                            </div>
+                        </div>
                     </div>
 
-                    {/* Mock Items */}
-                    {[1, 2, 3].map(item => (
-                        <div key={item} className="bg-white p-4 rounded-lg shadow-sm border border-gray-50">
-                            <div className="aspect-square bg-gray-100 rounded mb-4"></div>
-                            <h3 className="font-script text-lg text-charcoal">Item Name</h3>
-                            <p className="text-xs text-gray-400 uppercase tracking-widest">Category</p>
-                        </div>
-                    ))}
+                    <div className="flex justify-end gap-3 mb-10">
+                        <button className="bg-white text-charcoal border border-white px-6 py-3 uppercase text-xs tracking-widest hover:bg-gray-100 transition">Add to Bag</button>
+                        <button className="bg-charcoal text-white border border-charcoal px-6 py-3 uppercase text-xs tracking-widest hover:bg-black transition">Add Bag</button>
+                    </div>
                 </div>
+
             </main>
+
+            <Footer />
         </div>
     );
 };
