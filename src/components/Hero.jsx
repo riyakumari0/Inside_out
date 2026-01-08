@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { Leaf, Branch, Flower } from './Decorations';
 
 const Hero = () => {
     return (
@@ -8,18 +9,32 @@ const Hero = () => {
             {/* Texture Overlay (Optional, for depth) */}
             <div className="absolute inset-0 bg-black/5 pointer-events-none z-0"></div>
 
+            {/* Floral Decorations */}
+            <div className="absolute top-0 left-0 p-4 z-20 pointer-events-none">
+                <Branch className="w-48 h-48 text-sage-dark/10" />
+            </div>
+            <div className="absolute bottom-0 right-0 p-4 z-20 pointer-events-none">
+                <Branch className="w-64 h-64 text-off-white/10" flip={true} />
+            </div>
+
             {/* Left Content: Collage/Image Area */}
             <div className="w-full md:w-1/2 min-h-[50vh] md:min-h-full flex items-center justify-center p-8 z-10 relative">
                 {/* Placeholder for Torn Paper Collage */}
-                <div className="relative w-full max-w-md aspect-square bg-off-white/10 backdrop-blur-sm rounded-lg p-4 shadow-xl border border-white/20 transform -rotate-2">
+                <div className="relative w-full max-w-md aspect-square bg-off-white/10 backdrop-blur-sm rounded-lg p-4 shadow-xl border border-white/20 transform -rotate-2 overflow-hidden">
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 opacity-30" style={{ backgroundImage: "url('/hero/bg.png')", backgroundSize: '150px' }}></div>
                     <div className="absolute top-0 left-0 w-full h-full border-4 border-dashed border-off-white/30 rounded-lg pointer-events-none"></div>
                     <div className="flex flex-col items-center justify-center h-full text-center">
                         <span className="font-script text-4xl mb-4">Inside & Out</span>
                         <p className="text-sm tracking-widest uppercase">Your Wardrobe Reimagined</p>
                         {/* This would be where the actual collage image goes */}
-                        <div className="mt-8 grid grid-cols-2 gap-4 opacity-80">
-                            <div className="bg-charcoal/20 w-24 h-32 rounded"></div>
-                            <div className="bg-charcoal/20 w-24 h-32 rounded mt-8"></div>
+                        <div className="mt-8 grid grid-cols-2 gap-4">
+                            <div className="w-24 h-32 md:w-32 md:h-40 bg-white p-1 shadow-md rotate-[-6deg]">
+                                <img src="/hero/outfits1.png" className="w-full h-full object-cover" alt="Outfit 1" />
+                            </div>
+                            <div className="w-24 h-32 md:w-32 md:h-40 bg-white p-1 shadow-md rotate-[6deg] mt-8">
+                                <img src="/hero/outfits2.png" className="w-full h-full object-cover" alt="Outfit 2" />
+                            </div>
                         </div>
                     </div>
                     {/* Torn paper visual effect can be added with CSS clip-paths or SVGs here */}

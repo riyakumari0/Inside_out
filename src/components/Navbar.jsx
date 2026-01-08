@@ -18,7 +18,7 @@ const Navbar = () => {
                 <a href="#" className="hover:text-sage-green transition-colors">Home</a>
                 <a href="#" className="hover:text-sage-green transition-colors">Favorites</a>
                 <a href="#" className="hover:text-sage-green transition-colors">Create</a>
-                <a href="#" className="hover:text-sage-green transition-colors">Credit</a>
+
             </div>
 
             {/* Right: Search & Profile */}

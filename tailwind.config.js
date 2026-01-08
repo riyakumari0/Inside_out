@@ -8,6 +8,11 @@ export default {
         extend: {
             colors: {
                 'sage-green': '#7D8C71',
+                'sage': {
+                    'light': '#A3B087',
+                    'DEFAULT': '#7D8C71',
+                    'dark': '#556948',
+                },
                 'off-white': '#F9F9F9',
                 'charcoal': '#333333',
             },
