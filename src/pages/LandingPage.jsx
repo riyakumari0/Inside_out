@@ -2,17 +2,22 @@ import React from 'react';
 import LandingNavbar from '../components/LandingNavbar';
 import Hero from '../components/Hero';
 import Footer from '../components/Footer';
-import { Leaf, Branch, Flower } from '../components/Decorations';
+import { Branch } from '../components/Decorations';
 import { Shirt, Layers, User, Star } from 'lucide-react';
 import { motion, useScroll, useTransform } from 'framer-motion';
+import { Link } from 'react-router-dom';
 
-const CategoryCard = ({ title, icon: Icon, delay }) => (
-    <motion.div
+const MotionLink = motion.create(Link);
+
+const CategoryCard = ({ title, icon: Icon, delay, to }) => (
+    <MotionLink
+        to={to}
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ delay, duration: 0.5 }}
-        className="bg-sage-green/80 hover:bg-sage-green aspect-square flex flex-col items-center justify-center text-off-white p-6 cursor-pointer transition-colors shadow-md border-2 border-off-white/20 group"
+        whileHover={{ y: -4 }}
+        className="bg-sage-green/80 hover:bg-sage-green aspect-square flex flex-col items-center justify-center text-off-white p-3 sm:p-6 cursor-pointer transition-colors shadow-md hover:shadow-xl border-2 border-off-white/20 group"
     >
         <motion.div
             animate={{ y: [0, -8, 0] }}
@@ -21,8 +26,8 @@ const CategoryCard = ({ title, icon: Icon, delay }) => (
         >
             <Icon className="w-8 h-8 md:w-10 md:h-10 text-off-white" strokeWidth={1.5} />
         </motion.div>
-        <span className="mt-4 font-sans tracking-widest uppercase text-sm md:text-base font-medium">{title}</span>
-    </motion.div>
+        <span className="mt-4 font-sans tracking-wider sm:tracking-widest uppercase text-xs sm:text-sm md:text-base font-medium text-center whitespace-nowrap">{title}</span>
+    </MotionLink>
 );
 
 const containerVariants = {
@@ -44,7 +49,7 @@ const LandingPage = () => {
     const yParallax = useTransform(scrollYProgress, [0, 1], [0, -50]);
 
     return (
-        <div className="bg-off-white min-h-screen flex flex-col">
+        <div className="bg-off-white min-h-screen flex flex-col overflow-x-clip">
             <LandingNavbar />
             <main className="flex-grow">
                 <Hero />
@@ -52,10 +57,10 @@ const LandingPage = () => {
                 {/* Category Grid */}
                 <section className="py-16 px-6 md:px-12 bg-off-white">
                     <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
-                        <CategoryCard title="New In" icon={Shirt} delay={0.1} />
-                        <CategoryCard title="Collections" icon={Layers} delay={0.2} />
-                        <CategoryCard title="Your Style" icon={User} delay={0.3} />
-                        <CategoryCard title="Favorites" icon={Star} delay={0.4} />
+                        <CategoryCard title="New In" to="/collections?view=new" icon={Shirt} delay={0.1} />
+                        <CategoryCard title="Collections" to="/collections" icon={Layers} delay={0.2} />
+                        <CategoryCard title="Your Style" to="/create" icon={User} delay={0.3} />
+                        <CategoryCard title="Favorites" to="/favorites" icon={Star} delay={0.4} />
                     </div>
                 </section>
 
@@ -99,6 +104,7 @@ const LandingPage = () => {
                             <motion.div
                                 initial={{ y: 50, opacity: 0 }}
                                 whileInView={{ y: 0, opacity: 1 }}
+                                viewport={{ once: true }}
                                 transition={{ delay: 0.2, duration: 0.8 }}
                                 className="absolute left-4 bottom-0 w-48 h-64 md:w-56 md:h-72 bg-white p-2 shadow-xl -rotate-3 z-20"
                             >
@@ -122,12 +128,13 @@ const LandingPage = () => {
                             className="grid grid-cols-2 md:grid-cols-4 gap-6"
                         >
                             {[
-                                { id: 1, src: "/featured/style1.png", title: "Date Night" },
-                                { id: 2, src: "/featured/style2.png", title: "Corporate Chic" },
-                                { id: 3, src: "/featured/style3.png", title: "Weekend Vibes" },
-                                { id: 4, src: "/featured/style4.png", title: "Toddler Edit" }
+                                { id: 1, src: "/featured/style1.png", title: "Date Night", vibe: "date-night" },
+                                { id: 2, src: "/featured/style2.png", title: "Corporate Chic", vibe: "corporate" },
+                                { id: 3, src: "/featured/style3.png", title: "Weekend Vibes", vibe: "weekend" },
+                                { id: 4, src: "/featured/style4.png", title: "Toddler Edit", vibe: "toddler" }
                             ].map((item) => (
-                                <motion.div key={item.id} variants={itemVariants} className="group cursor-pointer">
+                                <motion.div key={item.id} variants={itemVariants}>
+                                <Link to={`/create?vibe=${item.vibe}`} className="group cursor-pointer block">
                                     <div className="bg-gray-100 aspect-[3/4] mb-4 relative overflow-hidden rounded-md shadow-sm">
                                         <div className="absolute inset-0 bg-black/5 group-hover:bg-black/0 transition-colors z-10 pointer-events-none"></div>
                                         {/* Zooming Image */}
@@ -145,7 +152,9 @@ const LandingPage = () => {
                                     </div>
                                     <div className="text-center">
                                         <h4 className="font-script text-lg text-charcoal">{item.title}</h4>
+                                        <p className="text-[0.6rem] uppercase tracking-widest text-white/0 group-hover:text-white/90 transition-colors">Style this vibe →</p>
                                     </div>
+                                </Link>
                                 </motion.div>
                             ))}
                         </motion.div>
@@ -157,7 +166,7 @@ const LandingPage = () => {
                     <div className="absolute -top-40 left-0 pointer-events-none z-20 mix-blend-overlay">
                         <Branch className="w-64 h-64 text-white/20" flip={true} />
                     </div>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" className="block w-full h-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" className="block w-full h-auto max-h-[320px]" preserveAspectRatio="none">
                         <path fill="#DDF4E7" fillOpacity="1" d="M0,96L48,112C96,128,192,160,288,186.7C384,213,480,235,576,213.3C672,192,768,128,864,128C960,128,1056,192,1152,208C1248,224,1344,192,1392,176L1440,160L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
                     </svg>
                 </div>
@@ -165,7 +174,7 @@ const LandingPage = () => {
                 {/* Instructional Section */}
                 <section className="py-20 bg-[#DDF4E7] text-charcoal">
                     <div className="max-w-6xl mx-auto px-6 text-center">
-                        <h2 className="font-script text-5xl mb-12 text-White">How to Use I & O</h2>
+                        <h2 className="font-script text-4xl sm:text-5xl mb-12">How to Use I&nbsp;&amp;&nbsp;O</h2>
                         <motion.div
                             variants={containerVariants}
                             initial="hidden"
@@ -173,21 +182,24 @@ const LandingPage = () => {
                             viewport={{ once: true }}
                             className="grid md:grid-cols-3 gap-12"
                         >
-                            <motion.div variants={itemVariants} className="flex flex-col items-center">
-                                <span className="text-6xl font-script text-White/40 mb-4">1</span>
+                            <MotionLink to="/wardrobe/new" variants={itemVariants} className="flex flex-col items-center group">
+                                <span className="text-6xl font-script mb-4 group-hover:-translate-y-1 transition-transform">1</span>
                                 <h3 className="text-xl font-bold uppercase tracking-wide mb-2">Digitize</h3>
                                 <p className="text-sm opacity-80 max-w-xs">Upload your wardrobe and let our AI organize your closet inventory.</p>
-                            </motion.div>
-                            <motion.div variants={itemVariants} className="flex flex-col items-center">
-                                <span className="text-6xl font-script text-White/40 mb-4">2</span>
+                                <span className="mt-3 text-xs uppercase tracking-widest text-sage-dark opacity-0 group-hover:opacity-100 transition-opacity">Start →</span>
+                            </MotionLink>
+                            <MotionLink to="/create" variants={itemVariants} className="flex flex-col items-center group">
+                                <span className="text-6xl font-script mb-4 group-hover:-translate-y-1 transition-transform">2</span>
                                 <h3 className="text-xl font-bold uppercase tracking-wide mb-2">Set the Vibe</h3>
                                 <p className="text-sm opacity-80 max-w-xs">Tell us the event or mood. "Brunch with girls" or "Corporate Chic".</p>
-                            </motion.div>
-                            <motion.div variants={itemVariants} className="flex flex-col items-center">
-                                <span className="text-6xl font-script text-White/40 mb-4">3</span>
+                                <span className="mt-3 text-xs uppercase tracking-widest text-sage-dark opacity-0 group-hover:opacity-100 transition-opacity">Start →</span>
+                            </MotionLink>
+                            <MotionLink to="/create" variants={itemVariants} className="flex flex-col items-center group">
+                                <span className="text-6xl font-script mb-4 group-hover:-translate-y-1 transition-transform">3</span>
                                 <h3 className="text-xl font-bold uppercase tracking-wide mb-2">Manifest the Fit</h3>
                                 <p className="text-sm opacity-80 max-w-xs">Get AI-curated outfits instantly and shop your own closet.</p>
-                            </motion.div>
+                                <span className="mt-3 text-xs uppercase tracking-widest text-sage-dark opacity-0 group-hover:opacity-100 transition-opacity">Start →</span>
+                            </MotionLink>
                         </motion.div>
                     </div>
                 </section>
@@ -197,7 +209,7 @@ const LandingPage = () => {
                     <div className="absolute -top-32 right-0 pointer-events-none z-20">
                         <Branch className="w-40 h-40 text-[#556948]" />
                     </div>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" className="block w-full h-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" className="block w-full h-auto max-h-[320px]" preserveAspectRatio="none">
                         <path fill="#556948" fillOpacity="1" d="M0,224L48,213.3C96,203,192,181,288,181.3C384,181,480,203,576,224C672,245,768,267,864,250.7C960,235,1056,181,1152,165.3C1248,149,1344,171,1392,181.3L1440,192L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
                     </svg>
                 </div>

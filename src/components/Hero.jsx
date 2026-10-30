@@ -1,9 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Leaf, Branch, Flower } from './Decorations';
+import { Branch } from './Decorations';
+import useAuth from '../hooks/useAuth';
+
+const MotionLink = motion.create(Link);
 
 const Hero = () => {
+    const { user } = useAuth();
+
     return (
         <section className="w-full min-h-[90vh] flex flex-col md:flex-row bg-sage-green text-off-white overflow-hidden relative">
             {/* Texture Overlay (Optional, for depth) */}
@@ -29,12 +34,27 @@ const Hero = () => {
                         <p className="text-sm tracking-widest uppercase">Your Wardrobe Reimagined</p>
                         {/* This would be where the actual collage image goes */}
                         <div className="mt-8 grid grid-cols-2 gap-4">
-                            <div className="w-24 h-32 md:w-32 md:h-40 bg-white p-1 shadow-md rotate-[-6deg]">
-                                <img src="/hero/outfits1.png" className="w-full h-full object-cover" alt="Outfit 1" />
-                            </div>
-                            <div className="w-24 h-32 md:w-32 md:h-40 bg-white p-1 shadow-md rotate-[6deg] mt-8">
-                                <img src="/hero/outfits2.png" className="w-full h-full object-cover" alt="Outfit 2" />
-                            </div>
+                            {/* Polaroids can be picked up and dragged; they spring back when let go */}
+                            <motion.div
+                                drag
+                                dragSnapToOrigin
+                                whileHover={{ rotate: -2, scale: 1.05 }}
+                                whileDrag={{ scale: 1.1, rotate: 0, zIndex: 30 }}
+                                style={{ rotate: -6 }}
+                                className="w-24 h-32 md:w-32 md:h-40 bg-white p-1 shadow-md cursor-grab active:cursor-grabbing touch-none"
+                            >
+                                <img src="/hero/outfits1.png" className="w-full h-full object-cover pointer-events-none" alt="Outfit 1" draggable={false} />
+                            </motion.div>
+                            <motion.div
+                                drag
+                                dragSnapToOrigin
+                                whileHover={{ rotate: 2, scale: 1.05 }}
+                                whileDrag={{ scale: 1.1, rotate: 0, zIndex: 30 }}
+                                style={{ rotate: 6 }}
+                                className="w-24 h-32 md:w-32 md:h-40 bg-white p-1 shadow-md mt-8 cursor-grab active:cursor-grabbing touch-none"
+                            >
+                                <img src="/hero/outfits2.png" className="w-full h-full object-cover pointer-events-none" alt="Outfit 2" draggable={false} />
+                            </motion.div>
                         </div>
                     </div>
                     {/* Torn paper visual effect can be added with CSS clip-paths or SVGs here */}
@@ -56,15 +76,14 @@ const Hero = () => {
                         From your closet to the streets. Digitize your wardrobe, style with AI, and express your true self.
                     </p>
 
-                    <Link to="/login">
-                        <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            className="px-8 py-3 bg-off-white text-sage-green font-bold text-lg rounded-full shadow-lg hover:shadow-xl transition-all uppercase tracking-wider"
-                        >
-                            Login Now
-                        </motion.button>
-                    </Link>
+                    <MotionLink
+                        to={user ? '/dashboard' : '/login'}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="inline-block px-8 py-3 bg-off-white text-sage-green font-bold text-lg rounded-full shadow-lg hover:shadow-xl transition-shadow uppercase tracking-wider"
+                    >
+                        {user ? 'Open Wardrobe' : 'Login Now'}
+                    </MotionLink>
                 </motion.div>
             </div>
         </section>
