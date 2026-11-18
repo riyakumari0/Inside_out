@@ -35,14 +35,14 @@ Without keys, everything still works using the built-in rule-based stylist. Scre
 
 1. **Upload single pieces** (`/wardrobe/new`). One photo per piece. The photo is resized in the browser, then Django checks it's a real image, shrinks it to 1200px and strips EXIF (phone photos can carry GPS location). Gemini fills in name, category, colours, pattern, seasons and vibes; anything you typed yourself is never overwritten.
 2. **New users start empty.** The Dashboard shows a "Build your closet" checklist (a top, a bottom, footwear, an accessory) that ticks off and disappears once the basics are in.
-3. **Manifest the Fit** (`/create`). Pick a vibe →
+3. **Manifest the Fit** (`/create`). Pick a vibe, or **describe your event** in your own words ("cousin's wedding reception, evening, outdoors") →
    - Django builds rule-checked candidates: exactly one base (a dress, or a top + a bottom), plus the footwear and 1–2 accessories that coordinate best, and outerwear when the season or vibe calls for it.
    - Colour coordination: neutrals go with anything; monochrome, analogous and complementary colours score well; too many competing accents are penalised.
    - Gemini picks the final look from your closet and explains it. Its answer is **validated**: only your own piece IDs, correct structure. If anything is off, the best rule-based candidate is used instead.
    - **Shuffle** gives a different look; **Wear it today** logs it.
 4. **Finalize Look** saves it, and Gemini evaluates it (looking at the photos): score /10, colour harmony, vibe fit, tips, and **0–2 pieces to buy**.
 5. **Shop the gap:** each suggested piece has **Find products** → real Google Shopping results via SerpAPI (photo, price, store, link). Results are cached for 24h to save your quota.
-6. **Create Outfit Image:** Gemini's image model receives the photos of your pieces and creates an editorial flat-lay of the outfit. It's saved on the look and can be downloaded.
+6. **Outfit collage:** the manifested outfit shows as one Pinterest-style image of your own pieces (backgrounds removed on upload); saved looks keep it. **Create Outfit Image:** Gemini's image model receives the photos of your pieces and creates an editorial flat-lay of the outfit. It's saved on the look and can be downloaded.
 7. **Stylist chat** (bubble on logged-in pages): Gemini sees your closet and the last few messages.
 
 ---
@@ -61,6 +61,8 @@ Without keys, everything still works using the built-in rule-based stylist. Scre
 | `/bag` | logged in | Products saved from Shop the gap (🛍 icon) |
 | `/profile` | logged in | Name, email, photo, password, delete account |
 | `/forgot-password`, `/reset-password` | everyone | Email reset link. Without SMTP settings, the email prints in the `npm run api` terminal |
+| `/support` | logged in | Help & Support: report an issue, see its status and the owner's reply |
+| `/admin-panel` | admins | Overview (members, active users, open complaints), members (make admin, deactivate, delete), Complaints inbox (reply, resolve). `manage.py make_admin you@example.com` |
 | `/create` | logged in | Manifest the Fit → Finalize → Evaluate → Shop the gap → Outfit image; saved looks |
 | `/wardrobe/new`, `/:id`, `/:id/edit` | logged in | Add, view (wear log, cost per wear), edit, delete |
 
