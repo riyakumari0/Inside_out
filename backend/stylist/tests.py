@@ -1,5 +1,6 @@
 import base64
 import io
+import os
 import shutil
 import tempfile
 from unittest import mock
@@ -77,7 +78,7 @@ class AuthTests(Base):
         token = client.cookies['csrftoken'].value
         r = client.post('/api/auth/signup/', {'name': 'Bo', 'email': 'Bo@X.com', 'password': 'Str0ng-pass!'}, format='json', HTTP_X_CSRFTOKEN=token)
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.json()['user'], {'name': 'Bo', 'email': 'bo@x.com', 'avatar': None})
+        self.assertEqual(r.json()['user'], {'name': 'Bo', 'email': 'bo@x.com', 'avatar': None, 'isAdmin': False})
         self.assertEqual(client.get('/api/auth/me/').json()['user']['email'], 'bo@x.com')
 
         token = client.cookies['csrftoken'].value
@@ -202,6 +203,25 @@ class StylistTests(Base):
         self.assertNotIn(str(foreign.id), body['itemIds'])
         self.assertTrue(set(body['itemIds']) <= {str(i.id) for i in c.values()})
 
+    def test_outfit_for_described_event(self):
+        c = self.closet()
+        body = self.client.post('/api/stylist/outfit/', {'event': 'Dinner date at a rooftop restaurant'}, format='json').json()
+        self.assertEqual(body['event'], 'Dinner date at a rooftop restaurant')
+        self.assertEqual(body['vibe'], 'date-night')  # detected from the description
+        self.assertIsNotNone(validate_pick(body['itemIds'], {str(i.id): i for i in c.values()}))
+
+    def test_event_reaches_gemini(self):
+        c = self.closet()
+        pick = OutfitPick(item_ids=[str(c['dress'].id), str(c['heels'].id)], name='Garden Glow', reasoning='-', color_story='-')
+        with mock.patch.object(gemini, 'ask_json', return_value=pick) as ask:
+            self.client.post('/api/stylist/outfit/', {'event': "Cousin's sangeet, outdoors"}, format='json')
+        self.assertIn("Cousin's sangeet, outdoors", ask.call_args.args[0])
+
+    def test_look_saves_event(self):
+        c = self.closet()
+        r = self.client.post('/api/looks/', {'name': 'L', 'vibe': '', 'event': 'Job interview', 'itemIds': [str(c['tee'].id)]}, format='json')
+        self.assertEqual(r.json()['event'], 'Job interview')
+
     def test_outfit_with_empty_closet(self):
         self.assertEqual(self.client.post('/api/stylist/outfit/', {}, format='json').status_code, 400)
 
@@ -321,3 +341,189 @@ class GeminiWrapperTests(TestCase):
         with mock.patch.object(gemini, '_get_client', return_value=fake_client):
             with self.assertRaises(gemini.GeminiUnavailable):
                 gemini.ask_json('p', OutfitPick)
+
+
+def garment_photo(colour=(30, 60, 140), size=(200, 300)):
+    """A coloured garment-shaped block on a plain white background, like a product photo."""
+    img = Image.new('RGB', size, (250, 250, 250))
+    img.paste(Image.new('RGB', (size[0] // 2, size[1] // 2), colour), (size[0] // 4, size[1] // 4))
+    buffer = io.BytesIO()
+    img.save(buffer, format='JPEG')
+    return SimpleUploadedFile('g.jpg', buffer.getvalue(), content_type='image/jpeg')
+
+
+class CollageTests(Base):
+    def upload(self, name, category, colour):
+        r = self.client.post('/api/items/', {'name': name, 'category': category, 'image': garment_photo(colour)}, format='multipart')
+        self.assertEqual(r.status_code, 201)
+        return Item.objects.get(id=r.json()['id'])
+
+    def test_upload_makes_transparent_cutout(self):
+        item = self.upload('Blue Tee', 'top', (30, 60, 140))
+        self.assertTrue(item.cutout)
+        self.assertTrue(item.use_cutout)
+        cut = Image.open(item.cutout.path)
+        self.assertEqual(cut.mode, 'RGBA')
+        self.assertLess(cut.width, 150)  # cropped to the garment, white background gone
+        self.assertEqual(cut.getpixel((cut.width // 2, cut.height // 2))[3], 255)
+
+    def test_saving_a_look_builds_its_collage(self):
+        top = self.upload('Tee', 'top', (30, 60, 140))
+        bottom = self.upload('Skirt', 'bottom', (20, 20, 20))
+        shoes = self.upload('Heels', 'footwear', (180, 30, 30))
+        r = self.client.post('/api/looks/', {'name': 'L', 'itemIds': [str(top.id), str(bottom.id), str(shoes.id)]}, format='json')
+        collage = r.json()['collage']
+        self.assertTrue(collage.startswith('/media/collages/'))
+        img = Image.open(MEDIA + collage.removeprefix('/media'))
+        self.assertEqual(img.size, (1080, 1920))
+        left = [img.getpixel((x, y)) for x in range(60, 640, 20) for y in range(60, 1860, 20)]
+        right = [img.getpixel((x, y)) for x in range(680, 1020, 20) for y in range(60, 1860, 20)]
+        self.assertTrue(any(p[2] > 100 and p[0] < 80 for p in left))  # blue top on the left
+        self.assertTrue(any(p[0] > 140 and p[1] < 80 for p in right))  # red shoes on the right
+
+    def test_cutout_keeps_only_the_main_item(self):
+        import numpy as np
+        from wardrobe.collage import clean_mask
+        m = np.zeros((300, 300))
+        m[100:200, 80:140] = 1     # left shoe, in the middle
+        m[100:200, 160:220] = 1    # right shoe, its pair
+        m[0:60, 0:120] = 1         # a big prop running off the top-left edge (flowers, a plate)
+        m[260:266, 280:286] = 1    # a speck
+        m[230:250, 40:60] = 0.2    # a faint shadow
+        out = clean_mask(m) > 0.5
+        self.assertTrue(out[150, 110] and out[150, 190])   # both shoes stay
+        self.assertFalse(out[30, 60])                       # prop gone
+        self.assertFalse(out[263, 283])                     # speck gone
+        self.assertFalse(out[240, 50])                      # shadow gone
+
+    def test_cutout_falls_back_when_the_main_model_loses_the_piece(self):
+        import numpy as np
+        from wardrobe.collage import clean_mask
+        lost = np.zeros((200, 200)); lost[40:50, 40:160] = 1        # only the strap of a white bag
+        backup = np.zeros((200, 200)); backup[40:180, 40:160] = 0.6  # the other model saw the whole bag, faintly
+        out = clean_mask(lost, backup) > 0.5
+        self.assertTrue(out[120, 100])
+        plain = np.zeros((200, 200)); plain[40:180, 40:160] = 1     # plain background: the flood fill wins
+        self.assertTrue((clean_mask(lost, backup, plain) > 0.5)[170, 50])
+
+    def test_pieces_never_overlap(self):
+        import random
+        from wardrobe.collage import CANVAS, MARGIN, PIECE_GAP, layout
+        rng = random.Random(7)
+        outfits = [['top', 'bottom'], ['dress'], ['top', 'bottom', 'footwear'], ['dress', 'footwear', 'accessory'],
+                   ['top', 'bottom', 'outerwear', 'footwear', 'accessory', 'accessory', 'accessory'],
+                   ['top', 'bottom', 'footwear', 'accessory', 'accessory', 'accessory', 'accessory', 'outerwear'],
+                   ['footwear', 'accessory'], ['top']]
+        for _ in range(200):
+            cats = rng.choice(outfits)
+            # Any photo shape: very wide skirts, very tall boots, tiny earrings
+            pieces = [(str(n), (rng.randint(20, 1600), rng.randint(20, 1600)), c) for n, c in enumerate(cats)]
+            rects = [r for _, r in layout(pieces)]
+            self.assertEqual(len(rects), len(cats), cats)
+            for x0, y0, x1, y1 in rects:
+                self.assertTrue(MARGIN <= x0 < x1 <= CANVAS[0] - MARGIN and MARGIN <= y0 < y1 <= CANVAS[1] - MARGIN, (cats, rects))
+            for i, a in enumerate(rects):
+                for b in rects[i + 1:]:
+                    apart = a[2] + PIECE_GAP <= b[0] or b[2] + PIECE_GAP <= a[0] or a[3] + PIECE_GAP <= b[1] or b[3] + PIECE_GAP <= a[1]
+                    self.assertTrue(apart, f'{cats}: {a} and {b} are closer than {PIECE_GAP}px')
+
+    def test_preview_for_a_manifested_outfit(self):
+        top = self.upload('Tee', 'top', (30, 60, 140))
+        shoes = self.upload('Heels', 'footwear', (180, 30, 30))
+        body = self.client.post('/api/stylist/collage-preview/', {'itemIds': [str(top.id), str(shoes.id)]}, format='json').json()
+        self.assertTrue(body['image'].startswith('data:image/jpeg;base64,'))
+        img = Image.open(io.BytesIO(base64.b64decode(body['image'].split(',', 1)[1])))
+        self.assertEqual(img.size, (1080, 1920))
+        self.assertEqual(Look.objects.count(), 0)  # nothing saved
+
+    def test_preview_ignores_other_peoples_pieces(self):
+        other = User.objects.create_user('b@x.com', 'b@x.com', 'Str0ng-pass!')
+        theirs = Item.objects.create(owner=other, name='Not yours', category='top')
+        theirs.image.save('t.jpg', garment_photo(), save=True)
+        body = self.client.post('/api/stylist/collage-preview/', {'itemIds': [str(theirs.id)]}, format='json').json()
+        self.assertIsNone(body['image'])
+
+    def test_collage_redraws_and_files_are_cleaned_up(self):
+        top = self.upload('Tee', 'top', (30, 60, 140))
+        bottom = self.upload('Skirt', 'bottom', (20, 20, 20))
+        look_id = self.client.post('/api/looks/', {'name': 'L', 'itemIds': [str(top.id), str(bottom.id)]}, format='json').json()['id']
+        first = Look.objects.get(id=look_id).collage.path
+        cutout = top.cutout.path
+        self.client.delete(f'/api/items/{top.id}/')  # the look keeps the skirt, so its collage is redrawn
+        look = Look.objects.get(id=look_id)
+        self.assertFalse(os.path.exists(first))
+        self.assertFalse(os.path.exists(cutout))
+        self.assertTrue(os.path.exists(look.collage.path))
+        second = look.collage.path
+        self.client.delete(f'/api/looks/{look_id}/')
+        self.assertFalse(os.path.exists(second))
+
+    def test_switching_to_original_photo_redraws_collage(self):
+        top = self.upload('Tee', 'top', (30, 60, 140))
+        bottom = self.upload('Skirt', 'bottom', (20, 20, 20))
+        look_id = self.client.post('/api/looks/', {'name': 'L', 'itemIds': [str(top.id), str(bottom.id)]}, format='json').json()['id']
+        before = Look.objects.get(id=look_id).collage.name
+        r = self.client.patch(f'/api/items/{top.id}/', {'useCutout': False}, format='json')
+        self.assertFalse(r.json()['useCutout'])
+        self.assertNotEqual(Look.objects.get(id=look_id).collage.name, before)
+
+    def test_collage_endpoint_for_older_looks(self):
+        item = Item.objects.create(owner=self.user, name='Dress', category='dress')
+        item.image.save('d.jpg', garment_photo((120, 40, 90)), save=True)
+        look = Look.objects.create(owner=self.user, name='Old')
+        look.items.set([item])
+        body = self.client.post('/api/stylist/collage/', {'lookId': str(look.id)}, format='json').json()
+        self.assertTrue(body['collage'])
+        item.refresh_from_db()
+        self.assertTrue(item.cutout)
+
+
+class WholeOutfitTests(Base):
+    def test_a_purse_saved_as_a_top_never_replaces_the_top(self):
+        c = self.closet()
+        purse = self.item('Office side purse', 'top', ['brown'], ['date-night'], favorite=True)
+        for _ in range(20):
+            body = self.client.post('/api/stylist/outfit/', {'vibe': 'date-night'}, format='json').json()
+            picked = [Item.objects.get(id=i) for i in body['itemIds']]
+            real_tops = [i for i in picked if i.category in ('top', 'dress') and i != purse]
+            self.assertTrue(real_tops, f'no top or dress in {[i.name for i in picked]}')
+            if any(i.category == 'top' and i != purse for i in picked):
+                self.assertTrue(any(i.category == 'bottom' for i in picked))
+        self.assertEqual(purse.kind, 'accessory')
+
+    def test_gemini_cannot_use_a_purse_as_the_top(self):
+        c = self.closet()
+        purse = self.item('Office side purse', 'top', ['brown'])
+        pick = OutfitPick(item_ids=[str(purse.id), str(c['jeans'].id)], name='No Top', reasoning='-', color_story='-')
+        with mock.patch.object(gemini, 'ask_json', return_value=pick):
+            body = self.client.post('/api/stylist/outfit/', {'vibe': 'weekend'}, format='json').json()
+        self.assertFalse(body['ai'])  # rejected, the rule-based pick is used
+        self.assertNotEqual(set(body['itemIds']), {str(purse.id), str(c['jeans'].id)})
+
+
+class CleanPhotoTests(Base):
+    def test_ai_clean_up_replaces_the_cutout_and_can_be_undone(self):
+        r = self.client.post('/api/items/', {'name': 'Ruffle Top', 'category': 'top', 'image': garment_photo((30, 60, 140))}, format='multipart')
+        item = Item.objects.get(id=r.json()['id'])
+        cleaned = io.BytesIO()
+        Image.new('RGB', (300, 400), (255, 255, 255)).save(cleaned, format='PNG')
+        with mock.patch.object(gemini, 'generate_image', return_value=cleaned.getvalue()) as gen:
+            body = self.client.post('/api/stylist/clean-photo/', {'itemId': str(item.id)}, format='json').json()
+        self.assertIn('Ruffle Top', gen.call_args.args[0])
+        self.assertIn('mannequin', gen.call_args.args[0])
+        self.assertTrue(body['cutoutAi'])
+        original_photo = Item.objects.get(id=item.id).image.name
+        self.assertEqual(original_photo, item.image.name)  # the original photo is kept
+
+        body = self.client.post('/api/stylist/clean-photo/', {'itemId': str(item.id), 'undo': True}, format='json').json()
+        self.assertFalse(body['cutoutAi'])
+
+    def test_ai_clean_up_without_gemini(self):
+        r = self.client.post('/api/items/', {'name': 'Top', 'category': 'top', 'image': garment_photo()}, format='multipart')
+        resp = self.client.post('/api/stylist/clean-photo/', {'itemId': r.json()['id']}, format='json')
+        self.assertEqual(resp.status_code, 503)
+
+    def test_cannot_clean_someone_elses_piece(self):
+        other = User.objects.create_user('b@x.com', 'b@x.com', 'Str0ng-pass!')
+        theirs = Item.objects.create(owner=other, name='Theirs', category='top')
+        self.assertEqual(self.client.post('/api/stylist/clean-photo/', {'itemId': str(theirs.id)}, format='json').status_code, 404)

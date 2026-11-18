@@ -1,3 +1,4 @@
+import base64
 import random
 
 from django.core.files.base import ContentFile
@@ -10,7 +11,10 @@ from rest_framework.views import APIView
 
 from wardrobe.constants import COLORS, VIBES
 from wardrobe.images import clean_upload, image_bytes
+from wardrobe.collage import build_collage
 from wardrobe.models import Item, Look
+from wardrobe.outfit_images import ensure_cutouts, refresh_collage, refresh_cutout
+from wardrobe.serializers import ItemSerializer
 from wardrobe.serializers import LookSerializer
 
 from . import gemini
@@ -83,6 +87,7 @@ class AnalyzeView(APIView):
 
 class OutfitRequest(serializers.Serializer):
     vibe = serializers.ChoiceField(choices=list(VIBES), required=False, allow_blank=True)
+    event = serializers.CharField(max_length=200, required=False, allow_blank=True)
     anchorId = serializers.UUIDField(required=False, allow_null=True)
     previousIds = serializers.ListField(child=serializers.UUIDField(), required=False)
 
@@ -93,7 +98,9 @@ class OutfitView(APIView):
     def post(self, request):
         params = OutfitRequest(data=request.data)
         params.is_valid(raise_exception=True)
-        vibe = params.validated_data.get('vibe') or None
+        event = params.validated_data.get('event', '').strip()
+        # A described event steers the rule-based builder too, e.g. "office party" -> party
+        vibe = params.validated_data.get('vibe') or (detect_vibe(event) if event else None)
         previous = {str(i) for i in params.validated_data.get('previousIds', [])}
 
         items = list(Item.objects.filter(owner=request.user))
@@ -113,16 +120,17 @@ class OutfitView(APIView):
 
         pick, ai = None, False
         try:
-            pick, ai = self._ask_gemini(items, candidates, vibe, season, anchor, previous, by_id)
+            pick, ai = self._ask_gemini(items, candidates, vibe, event, season, anchor, previous, by_id)
         except gemini.GeminiUnavailable:
             pass
 
         if pick is None:
             best = candidates[0]
+            occasion = event or vibe_label(vibe).lower()
             pick = {
                 'items': best.items,
-                'name': f'{vibe_label(vibe)} Fit',
-                'reasoning': f'Picked for {vibe_label(vibe).lower()} in {season}, balancing your favourites with pieces that coordinate.',
+                'name': f'{vibe_label(vibe)} Fit' if vibe or not event else 'Your Event Fit',
+                'reasoning': f'Picked for {occasion} in {season}, balancing your favourites with pieces that coordinate.',
                 'color_story': best.harmony_label.capitalize() + '.',
             }
 
@@ -135,16 +143,20 @@ class OutfitView(APIView):
             'colorStory': pick['color_story'],
             'harmony': {'score': round(harmony, 2), 'label': label},
             'notes': notes,
+            'vibe': vibe or '',
+            'event': event,
             'ai': ai,
         })
 
-    def _ask_gemini(self, items, candidates, vibe, season, anchor, previous, by_id):
+    def _ask_gemini(self, items, candidates, vibe, event, season, anchor, previous, by_id):
         wardrobe = '\n'.join(i.describe() for i in items[:150])
         shortlist = '\n'.join(
             f'{n + 1}. {", ".join(c.ids)}  (colour harmony {c.harmony:.2f}: {c.harmony_label})'
             for n, c in enumerate(candidates)
         )
-        prompt = f"""Create one outfit for the vibe "{vibe_label(vibe)}" in {season}.
+        occasion = f'the event "{event}"' + (f' (vibe: {vibe_label(vibe)})' if vibe else '') if event else f'the vibe "{vibe_label(vibe)}"'
+        prompt = f"""Create one outfit for {occasion} in {season}.
+Think about the event's formality, time of day, setting and weather when choosing pieces.
 
 Wardrobe (id in brackets):
 {wardrobe}
@@ -173,7 +185,7 @@ def _fallback_evaluation(look, items):
     harmony, label = outfit_harmony(items)
     vibe_hits = sum(1 for i in items if look.vibe and look.vibe in i.tags)
     vibe_ratio = vibe_hits / len(items) if look.vibe else 0.6
-    categories = {i.category for i in items}
+    categories = {i.kind for i in items}
 
     missing = []
     accents = [c for i in items for c in i.colors[:1]]
@@ -215,7 +227,7 @@ class EvaluateView(LookActionMixin, APIView):
 
         try:
             result = gemini.ask_json(
-                f"""Evaluate this outfit for the vibe "{vibe_label(look.vibe)}" in {current_season()}.
+                f"""Evaluate this outfit for {f'the event "{look.event}"' if look.event else f'the vibe "{vibe_label(look.vibe)}"'} in {current_season()}.
 Pieces (photos attached in the same order where available):
 {chr(10).join(i.describe() for i in items)}
 
@@ -265,8 +277,8 @@ class OutfitImageView(LookActionMixin, APIView):
 
         prompt = (
             f'Create a polished editorial flat-lay photograph of exactly these {len(items)} clothing pieces '
-            f'styled together as one "{vibe_label(look.vibe)}" outfit: '
-            + '; '.join(f'{i.name} ({i.category})' for i in items)
+            f'styled together as one "{look.event or vibe_label(look.vibe)}" outfit: '
+            + '; '.join(f'{i.name} ({i.kind})' for i in items)
             + '. Keep every garment\'s colours, patterns and details faithful to the reference photos. '
             'Arrange them naturally on a soft sage-green linen background with gentle daylight and soft shadows. '
             'No people, no mannequins, no text, no logos added.'
@@ -283,6 +295,79 @@ class OutfitImageView(LookActionMixin, APIView):
             look.image.delete(save=False)
         look.image.save('look.png', ContentFile(data), save=True)
         return Response(LookSerializer(look, context={'request': request}).data)
+
+
+# ---------- Collage ----------
+
+class CollagePreviewRequest(serializers.Serializer):
+    itemIds = serializers.ListField(child=serializers.UUIDField(), min_length=1, max_length=12)
+
+
+class CollagePreviewView(APIView):
+    """The moodboard for a manifested outfit before it's saved (nothing is stored)."""
+    throttle_scope = 'collage'
+
+    def post(self, request):
+        params = CollagePreviewRequest(data=request.data)
+        params.is_valid(raise_exception=True)
+        ids = [str(i) for i in params.validated_data['itemIds']]
+        by_id = {str(i.id): i for i in Item.objects.filter(owner=request.user, id__in=ids)}
+        items = [by_id[i] for i in ids if i in by_id]
+        ensure_cutouts(items)
+        data = build_collage(items)
+        if not data:
+            return Response({'image': None})
+        return Response({'image': 'data:image/jpeg;base64,' + base64.b64encode(data).decode('ascii')})
+
+
+class CollageView(LookActionMixin, APIView):
+    """Rebuilds a saved look's collage (makes any missing cut-outs first)."""
+    throttle_scope = 'collage'
+
+    def post(self, request):
+        look = self.get_look(request)
+        ensure_cutouts(look.items.all())
+        refresh_collage(look)
+        return Response(LookSerializer(look, context={'request': request}).data)
+
+
+class CleanPhotoView(APIView):
+    """
+    For photos where something is joined to the piece (a mannequin, a model, a stand):
+    Gemini redraws only the piece as a plain product shot, which is then cut out.
+    The original photo is kept. {itemId, undo: true} goes back to cutting out the photo.
+    """
+    throttle_scope = 'image'
+
+    def get_throttles(self):
+        return [] if self.request.data.get('undo') else super().get_throttles()
+
+    def post(self, request):
+        item = get_object_or_404(Item, id=request.data.get('itemId'), owner=request.user)
+        if not item.image:
+            return Response({'detail': 'Add a photo to this piece first.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.data.get('undo'):
+            refresh_cutout(item)
+        else:
+            prompt = (
+                f'This photo shows a {item.kind}: "{item.name}". Recreate ONLY that one {item.kind} as a clean e-commerce '
+                'product photo on a plain pure-white background, seen from the front, the whole item visible and nothing cropped. '
+                'Remove everything else: any person, mannequin, hanger, stand, table, props, flowers, other clothes and shadows. '
+                'Keep the item exactly as it is: same colours, pattern, fabric, shape, length and details. No text, no logos added.'
+            )
+            try:
+                cleaned = gemini.generate_image(prompt, [gemini.image_part(image_bytes(item.image))], aspect_ratio='3:4')
+            except gemini.GeminiUnavailable:
+                return Response(
+                    {'detail': 'AI clean-up needs Gemini. Check GEMINI_API_KEY in backend/.env.'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            refresh_cutout(item, source=cleaned)
+
+        for look in item.looks.all():
+            refresh_collage(look)
+        return Response(ItemSerializer(item, context={'request': request}).data)
 
 
 # ---------- Chat ----------
