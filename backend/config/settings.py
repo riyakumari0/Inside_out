@@ -5,6 +5,7 @@ Secrets and per-environment values come from backend/.env (see .env.example).
 """
 
 import os
+import sys
 from pathlib import Path
 
 import dj_database_url
@@ -133,6 +134,14 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = env_bool('DJANGO_SSL_REDIRECT', False)
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
+# Outfit collages: 'rembg' cuts pieces out of their photos with an AI model that runs here
+# (downloaded once, ~400 MB in total). 'simple' only removes plain, even backgrounds.
+CUTOUT_ENGINE = 'simple' if 'test' in sys.argv[1:2] else os.getenv('CUTOUT_ENGINE', 'rembg')  # tests stay fast and offline
+TESTING = 'test' in sys.argv[1:2]
+CUTOUT_IN_BACKGROUND = not TESTING  # uploads return at once; tests run it inline
+CUTOUT_MODEL = os.getenv('CUTOUT_MODEL', 'birefnet-general-lite')  # ~220 MB, crisp edges
+CUTOUT_BACKUP_MODEL = os.getenv('CUTOUT_BACKUP_MODEL', 'isnet-general-use')  # ~170 MB, rescues white-on-white pieces
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.SessionAuthentication'],
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
@@ -147,6 +156,8 @@ REST_FRAMEWORK = {
         'image': '10/day',
         'chat': '60/hour',
         'contact': '5/hour',
+        'support': '10/hour',
+        'collage': '120/hour',
     },
 }
 
