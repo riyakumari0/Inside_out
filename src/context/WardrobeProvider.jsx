@@ -51,14 +51,17 @@ const WardrobeProvider = ({ owner, children }) => {
             updateItem: async (id, fields, photo) => {
                 const item = await api(`/items/${id}/`, { method: 'PATCH', form: toFormData({ ...fields, image: photo }) });
                 replaceItem(item);
+                // A new photo redraws the collages of looks that use this piece
+                if (photo !== undefined || fields.removeImage || fields.useCutout !== undefined) api('/looks/').then(setLooks).catch(() => {});
                 return item;
             },
             removeItem: async (id) => {
                 await api(`/items/${id}/`, { method: 'DELETE' });
                 setItems(prev => prev.filter(item => item.id !== id));
-                setLooks(prev => prev
+                // Looks that used the piece get a redrawn collage (or are removed when empty)
+                api('/looks/').then(setLooks).catch(() => setLooks(prev => prev
                     .map(look => ({ ...look, itemIds: look.itemIds.filter(i => i !== id) }))
-                    .filter(look => look.itemIds.length));
+                    .filter(look => look.itemIds.length)));
             },
             toggleFavorite: async (id) => {
                 const item = items.find(i => i.id === id);
@@ -76,8 +79,8 @@ const WardrobeProvider = ({ owner, children }) => {
                 updated.forEach(replaceItem);
             },
 
-            saveLook: async ({ name, vibe, itemIds, reasoning }) => {
-                const look = await api('/looks/', { method: 'POST', body: { name, vibe: vibe || '', itemIds, reasoning: reasoning || '' } });
+            saveLook: async ({ name, vibe, event, itemIds, reasoning }) => {
+                const look = await api('/looks/', { method: 'POST', body: { name, vibe: vibe || '', event: event || '', itemIds, reasoning: reasoning || '' } });
                 replaceLook(look);
                 return look;
             },
@@ -98,6 +101,18 @@ const WardrobeProvider = ({ owner, children }) => {
             // Stylist results (evaluation, generated image) come back as an updated look
             evaluateLook: async (id) => {
                 const look = await api('/stylist/evaluate/', { method: 'POST', body: { lookId: id } });
+                replaceLook(look);
+                return look;
+            },
+            // Gemini redraws only the piece as a product shot (undo: back to cutting out the photo)
+            cleanPhoto: async (id, undo = false) => {
+                const item = await api('/stylist/clean-photo/', { method: 'POST', body: { itemId: id, undo } });
+                replaceItem(item);
+                api('/looks/').then(setLooks).catch(() => {});
+                return item;
+            },
+            buildCollage: async (id) => {
+                const look = await api('/stylist/collage/', { method: 'POST', body: { lookId: id } });
                 replaceLook(look);
                 return look;
             },

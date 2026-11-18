@@ -46,6 +46,77 @@ const Polaroid = ({ item, index }) => (
     </motion.div>
 );
 
+// The manifested outfit as one moodboard image (made on the server from the pieces' cut-outs).
+// While it loads, or if it can't be made, the polaroids show instead.
+const OutfitCollage = ({ items, round, name }) => {
+    const [state, setState] = useState({ key: null, image: null });
+    const key = items.map(i => i.id).join(',');
+
+    useEffect(() => {
+        let cancelled = false;
+        api('/stylist/collage-preview/', { method: 'POST', body: { itemIds: items.map(i => i.id) } })
+            .then(data => !cancelled && setState({ key, image: data.image }))
+            .catch(() => !cancelled && setState({ key, image: null }));
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- redraw when the pieces change
+    }, [key]);
+
+    const ready = state.key === key;
+    if (ready && !state.image) {
+        return (
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-6 py-8">
+                <AnimatePresence mode="popLayout">
+                    {items.map((item, i) => <Polaroid key={`${round}-${item.id}`} item={item} index={i} />)}
+                </AnimatePresence>
+            </div>
+        );
+    }
+
+    return (
+        <div className="py-8 flex flex-col items-center">
+            <motion.div
+                key={`collage-${round}`}
+                initial={{ opacity: 0, y: 40, rotate: 0, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, rotate: -1.5, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 110, damping: 15 }}
+                whileHover={{ rotate: 0 }}
+                className="bg-white p-3 pb-10 shadow-2xl relative w-64 sm:w-72"
+            >
+                <div className="aspect-[9/16] bg-[#ECECE9] overflow-hidden relative">
+                    {ready && <motion.img initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }} src={state.image} alt={`${name}: the full outfit`} className="w-full h-full object-cover" />}
+                    {!ready && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sage-dark">
+                            <motion.span
+                                className="inline-block w-6 h-6 border-2 border-current border-t-transparent rounded-full"
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                            />
+                            <span className="text-[0.65rem] uppercase tracking-widest">Laying out your look…</span>
+                        </div>
+                    )}
+                </div>
+                <p className="absolute bottom-2 inset-x-0 text-center font-script text-xl text-charcoal truncate px-3">{name}</p>
+            </motion.div>
+
+            {/* The pieces in it, each opening its own page */}
+            <div className="flex flex-wrap justify-center gap-2 mt-6">
+                {items.map(item => (
+                    <Link key={item.id} to={`/wardrobe/${item.id}`} title={item.name} className="w-12 h-12 bg-white p-1 shadow hover:-translate-y-0.5 transition">
+                        {(item.cutout && item.useCutout ? item.cutout : item.image) && (
+                            <img src={item.cutout && item.useCutout ? item.cutout : item.image} alt={item.name} className="w-full h-full object-contain" />
+                        )}
+                    </Link>
+                ))}
+            </div>
+            {ready && (
+                <a href={state.image} download={`${name}.jpg`} className="mt-4 inline-flex items-center gap-2 text-xs uppercase tracking-widest text-white/80 hover:text-white">
+                    <Download size={12} /> Save image
+                </a>
+            )}
+        </div>
+    );
+};
+
 const ScoreRing = ({ score }) => {
     const r = 34;
     const c = 2 * Math.PI * r;
@@ -152,19 +223,34 @@ const ShopTheGap = ({ piece, lookId }) => {
     );
 };
 
-// The finalized look: Gemini's evaluation, shopping suggestions and the generated outfit image
+// The finalized look: its collage, Gemini's evaluation, shopping suggestions and an optional AI image
 const FinalLook = ({ look, onClose }) => {
-    const { getItem, visualizeLook } = useWardrobe();
+    const { getItem, visualizeLook, buildCollage } = useWardrobe();
     const { showToast } = useToast();
     const [isDrawing, setIsDrawing] = useState(false);
+    const [isCollaging, setIsCollaging] = useState(false);
+    const [view, setView] = useState('collage');
     const evaluation = look.evaluation;
     const pieces = look.itemIds.map(getItem).filter(Boolean);
+    const hasPhotos = pieces.some(p => p.image);
+    const shown = view === 'ai' && look.image ? look.image : (look.collage || look.image);
+    const isCollage = Boolean(shown) && shown === look.collage;
+
+    // Looks saved before collages existed get theirs the first time they're opened
+    const askedForCollage = useRef(false);
+    useEffect(() => {
+        if (look.collage || !hasPhotos || askedForCollage.current) return;
+        askedForCollage.current = true;
+        setIsCollaging(true);
+        buildCollage(look.id).catch(err => showToast(err.message)).finally(() => setIsCollaging(false));
+    }, [look.collage, look.id, hasPhotos, buildCollage, showToast]);
 
     const draw = async () => {
         setIsDrawing(true);
         try {
             await visualizeLook(look.id);
-            showToast('Outfit image ready ✨');
+            setView('ai');
+            showToast('AI outfit image ready ✨');
         } catch (err) {
             showToast(err.message);
         } finally {
@@ -181,21 +267,33 @@ const FinalLook = ({ look, onClose }) => {
             <button type="button" onClick={onClose} aria-label="Close look" className="absolute top-4 right-4 text-white/70 hover:text-white">
                 <X size={18} />
             </button>
-            <p className="text-xs uppercase tracking-[0.2em] opacity-80 mb-1">Final look · {vibeLabel(look.vibe) || 'Everyday'}</p>
+            <p className="text-xs uppercase tracking-[0.2em] opacity-80 mb-1 pr-8 break-words">Final look · {look.event || vibeLabel(look.vibe) || 'Everyday'}</p>
             <h2 className="font-script text-4xl md:text-5xl mb-8 pr-8">{look.name}</h2>
 
             <div className="grid lg:grid-cols-5 gap-8 lg:gap-10">
-                {/* Outfit image */}
+                {/* Outfit image: the collage of your own pieces, or Gemini's AI version */}
                 <div className="lg:col-span-2">
-                    <div className="bg-white p-3 pb-10 shadow-2xl -rotate-1 relative max-w-sm mx-auto">
-                        <div className="aspect-[4/5] bg-[#B5C1AE] overflow-hidden relative">
-                            {look.image ? (
-                                <motion.img key={look.image} initial={{ opacity: 0, scale: 1.05 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }} src={look.image} alt={look.name} className="w-full h-full object-cover" />
+                    {look.collage && look.image && (
+                        <div className="flex justify-center gap-2 mb-5">
+                            <Pill active={isCollage} onClick={() => setView('collage')}>Collage</Pill>
+                            <Pill active={!isCollage} onClick={() => setView('ai')}>AI Image</Pill>
+                        </div>
+                    )}
+                    <div className={`bg-white p-3 pb-10 shadow-2xl -rotate-1 relative mx-auto ${isCollage ? 'max-w-xs' : 'max-w-sm'}`}>
+                        <div className={`${isCollage ? 'aspect-[9/16] bg-[#ECECE9]' : 'aspect-[4/5] bg-[#B5C1AE]'} overflow-hidden relative`}>
+                            {shown ? (
+                                <motion.img key={shown} initial={{ opacity: 0, scale: 1.05 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }} src={shown} alt={look.name} className="w-full h-full object-cover" />
                             ) : (
                                 <div className="grid grid-cols-2 gap-1 w-full h-full p-1">
                                     {pieces.slice(0, 4).map(p => (
                                         <div key={p.id} className="bg-white/40 overflow-hidden">{p.image && <img src={p.image} alt={p.name} className="w-full h-full object-cover" />}</div>
                                     ))}
+                                </div>
+                            )}
+                            {isCollaging && !isDrawing && (
+                                <div className="absolute inset-0 bg-sage-dark/50 flex flex-col items-center justify-center text-white gap-3">
+                                    <Spinner />
+                                    <span className="text-xs uppercase tracking-widest">Laying out your look…</span>
                                 </div>
                             )}
                             {isDrawing && (
@@ -213,8 +311,8 @@ const FinalLook = ({ look, onClose }) => {
                         <button type="button" onClick={draw} disabled={isDrawing} className={primaryButton}>
                             {isDrawing ? <Spinner /> : <ImagePlus size={14} />} {look.image ? 'Re-create Image' : 'Create Outfit Image'}
                         </button>
-                        {look.image && (
-                            <a href={look.image} download={`${look.name}.png`} className={ghostButton}>
+                        {shown && (
+                            <a href={shown} download={`${look.name}${shown.endsWith('.png') ? '.png' : '.jpg'}`} className={ghostButton}>
                                 <Download size={14} /> Save
                             </a>
                         )}
@@ -276,6 +374,7 @@ const CreatePage = () => {
     const finalRef = useRef(null);
 
     const [vibe, setVibe] = useState(params.get('vibe') ?? '');
+    const [event, setEvent] = useState(params.get('event') ?? '');
     const [outfit, setOutfit] = useState(null);
     const [round, setRound] = useState(0);
     const [isStyling, setIsStyling] = useState(false);
@@ -290,7 +389,7 @@ const CreatePage = () => {
         try {
             const result = await api('/stylist/outfit/', {
                 method: 'POST',
-                body: { vibe, anchorId: anchor?.id ?? null, previousIds: shuffle && outfit ? outfit.itemIds : [] },
+                body: { vibe, event: event.trim(), anchorId: anchor?.id ?? null, previousIds: shuffle && outfit ? outfit.itemIds : [] },
             });
             setOutfit(result);
             setRound(r => r + 1);
@@ -304,7 +403,7 @@ const CreatePage = () => {
     const finalize = async () => {
         setIsFinalizing(true);
         try {
-            const look = await saveLook({ name: outfit.name, vibe, itemIds: outfit.itemIds, reasoning: outfit.reasoning });
+            const look = await saveLook({ name: outfit.name, vibe: outfit.vibe || vibe, event: outfit.event, itemIds: outfit.itemIds, reasoning: outfit.reasoning });
             setActiveLookId(look.id);
             setTimeout(() => finalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             await evaluateLook(look.id);
@@ -325,7 +424,7 @@ const CreatePage = () => {
     // Arriving from a featured style (?vibe=) or a piece's "Style it" (?with=) starts styling straight away
     const autoStarted = useRef(false);
     useEffect(() => {
-        if (autoStarted.current || !items.length || !(params.get('vibe') || anchorId)) return;
+        if (autoStarted.current || !items.length || !(params.get('vibe') || params.get('event') || anchorId)) return;
         autoStarted.current = true;
         manifest();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on arrival
@@ -359,6 +458,30 @@ const CreatePage = () => {
                             ))}
                         </div>
 
+                        {/* Or describe the real event in your own words */}
+                        <form
+                            className="mt-6 max-w-2xl"
+                            onSubmit={(e) => { e.preventDefault(); if (!isStyling) manifest(); }}
+                        >
+                            <label htmlFor="event" className="block text-xs uppercase tracking-widest text-white/80 mb-3">Or describe your event</label>
+                            <div className="relative">
+                                <input
+                                    id="event"
+                                    type="text"
+                                    value={event}
+                                    maxLength={200}
+                                    onChange={(e) => setEvent(e.target.value)}
+                                    placeholder="e.g. Cousin's wedding reception, evening, outdoors"
+                                    className="w-full bg-transparent border border-white/40 focus:border-white text-white placeholder-white/50 px-4 py-3 pr-10 text-sm focus:outline-none transition"
+                                />
+                                {event && (
+                                    <button type="button" onClick={() => setEvent('')} aria-label="Clear event" className="absolute right-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white">
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
+                        </form>
+
                         {anchor && (
                             <div className="mt-6 inline-flex items-center gap-3 bg-white/15 pl-2 pr-3 py-2">
                                 {anchor.image && <img src={anchor.image} alt="" className="w-8 h-10 object-cover" />}
@@ -382,11 +505,7 @@ const CreatePage = () => {
                     <section className="min-h-[200px] mb-16">
                         {outfit && outfitItems.length > 0 && (
                             <>
-                                <div className="flex flex-wrap justify-center gap-4 sm:gap-6 py-8">
-                                    <AnimatePresence mode="popLayout">
-                                        {outfitItems.map((item, i) => <Polaroid key={`${round}-${item.id}`} item={item} index={i} />)}
-                                    </AnimatePresence>
-                                </div>
+                                <OutfitCollage items={outfitItems} round={round} name={outfit.name} />
                                 <motion.div key={`about-${round}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="text-center max-w-2xl mx-auto">
                                     <AiChip ai={outfit.ai} />
                                     <p className="font-script text-4xl mt-3 mb-3">{outfit.name}</p>
@@ -424,7 +543,7 @@ const CreatePage = () => {
                                 <motion.div animate={{ rotate: [0, 12, -8, 0] }} transition={{ duration: 3, repeat: Infinity }} className="inline-block mb-4">
                                     <Sparkles size={36} strokeWidth={1.25} />
                                 </motion.div>
-                                <p className="font-script text-3xl">Pick a vibe, then manifest</p>
+                                <p className="font-script text-3xl">Pick a vibe or describe your event, then manifest</p>
                                 <p className="text-xs uppercase tracking-widest text-white/70 mt-2">Top + bottom or a dress · footwear · accessories · colour-coordinated</p>
                             </div>
                         )}
@@ -449,8 +568,8 @@ const CreatePage = () => {
                             return (
                                 <motion.div key={look.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`bg-white/10 border p-4 ${activeLookId === look.id ? 'border-white' : 'border-white/20'}`}>
                                     <button type="button" onClick={() => openLook(look.id)} className="block w-full text-left mb-4">
-                                        {look.image ? (
-                                            <div className="h-40 overflow-hidden"><img src={look.image} alt={look.name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" /></div>
+                                        {look.collage || look.image ? (
+                                            <div className="h-40 overflow-hidden bg-[#ECECE9]"><img src={look.collage || look.image} alt={look.name} className={`w-full h-full ${look.collage ? 'object-contain' : 'object-cover'} hover:scale-105 transition-transform duration-500`} /></div>
                                         ) : (
                                             <div className="flex gap-2 h-28">
                                                 {pieces.slice(0, 4).map(p => (
@@ -465,7 +584,7 @@ const CreatePage = () => {
                                         <button type="button" onClick={() => openLook(look.id)} className="min-w-0 text-left">
                                             <p className="font-script text-2xl truncate">{look.name}</p>
                                             <p className="text-[0.65rem] uppercase tracking-widest text-white/70 truncate">
-                                                {look.evaluation ? `Score ${look.evaluation.score}/10 · ` : ''}{pieces.length} pieces
+                                                {look.evaluation ? `Score ${look.evaluation.score}/10 · ` : ''}{look.event ? `${look.event} · ` : ''}{pieces.length} pieces
                                             </p>
                                         </button>
                                         <div className="flex gap-2 shrink-0">
