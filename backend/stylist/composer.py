@@ -73,7 +73,7 @@ def build_candidates(items, vibe=None, anchor=None, season=None, limit=6, seed=N
     season = season or current_season()
     by_cat = {}
     for item in items:
-        by_cat.setdefault(item.category, []).append(item)
+        by_cat.setdefault(item.kind, []).append(item)
 
     tops, bottoms, dresses = by_cat.get('top', []), by_cat.get('bottom', []), by_cat.get('dress', [])
     bases = [[d] for d in dresses] + [[t, b] for t in tops for b in bottoms]
@@ -81,7 +81,7 @@ def build_candidates(items, vibe=None, anchor=None, season=None, limit=6, seed=N
         # Not enough to build a full look; offer whatever single base piece exists
         bases = [[i] for i in tops + bottoms]
 
-    if anchor is not None and anchor.category in ('top', 'bottom', 'dress'):
+    if anchor is not None and anchor.kind in ('top', 'bottom', 'dress'):
         bases = [b for b in bases if anchor in b] or [[anchor]]
     rng.shuffle(bases)
     bases = bases[:MAX_BASES]
@@ -93,17 +93,17 @@ def build_candidates(items, vibe=None, anchor=None, season=None, limit=6, seed=N
         if anchor is not None and anchor not in look:
             look.append(anchor)
 
-        if not any(i.category == 'footwear' for i in look):
+        if not any(i.kind == 'footwear' for i in look):
             footwear = _best_match(by_cat.get('footwear', []), look, vibe, season, rng)
             look += footwear
             if not footwear:
                 notes.append('no footwear in closet')
 
         wants_layer = season in ('autumn', 'winter') or vibe in ('corporate', 'cozy', 'travel')
-        if wants_layer and not any(i.category == 'outerwear' for i in look):
+        if wants_layer and not any(i.kind == 'outerwear' for i in look):
             look += _best_match(by_cat.get('outerwear', []), look, vibe, season, rng)
 
-        existing_accessories = sum(1 for i in look if i.category == 'accessory')
+        existing_accessories = sum(1 for i in look if i.kind == 'accessory')
         accessories = _best_match(
             [a for a in by_cat.get('accessory', []) if a not in look], look, vibe, season, rng, limit=max(0, 2 - existing_accessories),
         )
@@ -143,7 +143,7 @@ def validate_pick(item_ids, items_by_id):
 
     count = {}
     for item in picked:
-        count[item.category] = count.get(item.category, 0) + 1
+        count[item.kind] = count.get(item.kind, 0) + 1
 
     has_dress = count.get('dress', 0) == 1 and not count.get('top') and not count.get('bottom')
     has_pair = count.get('top', 0) == 1 and count.get('bottom', 0) == 1 and not count.get('dress')

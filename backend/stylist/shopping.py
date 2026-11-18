@@ -52,7 +52,9 @@ def search_products(query, max_price=None, limit=6):
         response.raise_for_status()
         results = response.json().get('shopping_results', [])
     except (requests.RequestException, ValueError) as err:
-        logger.warning('SerpAPI search failed: %s', err)
+        # Never log the exception text: it contains the request URL, including api_key
+        status_code = getattr(getattr(err, 'response', None), 'status_code', None)
+        logger.warning('SerpAPI search failed (%s, status %s)', type(err).__name__, status_code)
         return store_links(query), False
 
     products = []
