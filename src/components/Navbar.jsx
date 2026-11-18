@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Search, Menu, X, Shirt, Heart, Plus, Layers, LogOut, LogIn, ShoppingBag, UserRound } from 'lucide-react';
+import { Search, Menu, X, Shirt, Heart, Plus, Layers, LogOut, LogIn, ShoppingBag, UserRound, ShieldCheck, LifeBuoy } from 'lucide-react';
 import useAuth from '../hooks/useAuth';
 
 const SearchBox = ({ className, inputClassName, onDone }) => {
@@ -63,6 +63,8 @@ const Navbar = () => {
         { to: '/favorites', label: 'Favorites', icon: Heart },
         { to: '/bag', label: 'My Bag', icon: ShoppingBag },
         { to: '/wardrobe/new', label: 'Add a Piece', icon: Plus },
+        { to: '/support', label: 'Help & Support', icon: LifeBuoy },
+        ...(user?.isAdmin ? [{ to: '/admin-panel', label: 'Admin Panel', icon: ShieldCheck }] : []),
     ];
 
     return (

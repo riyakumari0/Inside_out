@@ -13,6 +13,8 @@ import ItemPage from './pages/ItemPage';
 import NotFoundPage from './pages/NotFoundPage';
 import BagPage from './pages/BagPage';
 import ProfilePage from './pages/ProfilePage';
+import AdminPage from './pages/AdminPage';
+import SupportPage from './pages/SupportPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordResetPages';
 import ProtectedLayout from './components/ProtectedLayout';
 import ScrollToTop from './components/ScrollToTop';
@@ -55,6 +57,8 @@ function App() {
                                 <Route path="/wardrobe/new" element={<AddItemPage />} />
                                 <Route path="/wardrobe/:id" element={<ItemPage />} />
                                 <Route path="/wardrobe/:id/edit" element={<AddItemPage key="edit" />} />
+                                <Route path="/support" element={<SupportPage />} />
+                                <Route path="/admin-panel" element={<AdminPage />} />
                             </Route>
 
                             <Route path="*" element={<NotFoundPage />} />

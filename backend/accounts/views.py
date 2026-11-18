@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
@@ -6,6 +7,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -30,7 +32,20 @@ def user_payload(user):
         'name': user.first_name or user.username,
         'email': user.email,
         'avatar': profile.avatar.url if profile and profile.avatar else None,
+        'isAdmin': user.is_staff,
     }
+
+
+def delete_user_and_files(user):
+    """Deletes the account and every photo it uploaded (pieces, generated looks, avatar)."""
+    files = [f for i in user.items.all() for f in (i.image, i.cutout)] + [f for l in user.looks.all() for f in (l.image, l.collage)]
+    profile = Profile.objects.filter(user=user).first()
+    if profile:
+        files.append(profile.avatar)
+    for f in files:
+        if f:
+            f.delete(save=False)
+    user.delete()
 
 
 def check_new_password(password, user):
@@ -80,7 +95,15 @@ class MeView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response({'user': user_payload(request.user) if request.user.is_authenticated else None})
+        if not request.user.is_authenticated:
+            return Response({'user': None})
+        # The app calls this every time it opens, so it doubles as "last seen" for the admin panel
+        now = timezone.now()
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        if not profile.last_seen or now - profile.last_seen > timedelta(hours=1):
+            profile.last_seen = now
+            profile.save(update_fields=['last_seen'])
+        return Response({'user': user_payload(request.user)})
 
 
 # DRF skips CSRF checks for anonymous requests, so login/signup opt back in explicitly
@@ -210,15 +233,8 @@ class DeleteAccountView(APIView):
         user = request.user
         if not user.check_password(request.data.get('password', '')):
             raise serializers.ValidationError({'password': 'Your password is incorrect.'})
-        files = [i.image for i in user.items.all()] + [l.image for l in user.looks.all()]
-        profile = Profile.objects.filter(user=user).first()
-        if profile:
-            files.append(profile.avatar)
-        for f in files:
-            if f:
-                f.delete(save=False)
         logout(request)
-        user.delete()
+        delete_user_and_files(user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -266,6 +282,37 @@ class PasswordResetConfirmView(APIView):
         user.set_password(password)
         user.save()
         return Response({'ok': True})
+
+
+class SupportSerializer(serializers.ModelSerializer):
+    topic = serializers.ChoiceField(choices=[t for t in ContactMessage.TOPICS if t != 'contact'])
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+    repliedAt = serializers.DateTimeField(source='replied_at', read_only=True)
+
+    class Meta:
+        model = ContactMessage
+        fields = ['id', 'topic', 'message', 'status', 'reply', 'createdAt', 'repliedAt']
+        read_only_fields = ['status', 'reply']
+
+
+class SupportView(APIView):
+    """Help & Support for members: report a problem and see the owner's replies."""
+    throttle_scope = 'support'
+
+    def get_throttles(self):
+        return super().get_throttles() if self.request.method == 'POST' else []
+
+    def get(self, request):
+        tickets = ContactMessage.objects.filter(user=request.user)
+        return Response({'tickets': SupportSerializer(tickets, many=True).data})
+
+    def post(self, request):
+        serializer = SupportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        ticket = serializer.save(
+            user=request.user, name=request.user.first_name or request.user.email, email=request.user.email,
+        )
+        return Response(SupportSerializer(ticket).data, status=status.HTTP_201_CREATED)
 
 
 class HealthView(APIView):
