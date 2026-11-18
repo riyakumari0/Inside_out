@@ -158,3 +158,97 @@ class HealthTests(TestCase):
     def test_reports_services_without_leaking_keys(self):
         r = APIClient().get('/api/health/')
         self.assertEqual(r.json(), {'status': 'ok', 'gemini': True, 'shopping': False})
+
+
+class AdminPanelTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.create_user('boss@x.com', 'boss@x.com', PASSWORD, first_name='Boss', is_staff=True)
+        self.staff = APIClient()
+        self.staff.login(username='boss@x.com', password=PASSWORD)
+
+    def test_regular_users_are_blocked(self):
+        for url in ['/api/admin-panel/stats/', '/api/admin-panel/users/', '/api/admin-panel/messages/']:
+            self.assertEqual(self.client.get(url).status_code, 403)
+            self.assertEqual(APIClient().get(url).status_code, 403)
+        self.assertEqual(self.client.patch(f'/api/admin-panel/users/{self.admin.id}/', {'isActive': False}, format='json').status_code, 403)
+
+    def test_me_reports_admin_flag(self):
+        self.assertFalse(self.client.get('/api/auth/me/').json()['user']['isAdmin'])
+        self.assertTrue(self.staff.get('/api/auth/me/').json()['user']['isAdmin'])
+
+    def test_stats_and_user_list(self):
+        Item.objects.create(owner=self.user, name='Tee', category='top')
+        Look.objects.create(owner=self.user, name='L', vibe='party', event='office party')
+        stats = self.staff.get('/api/admin-panel/stats/').json()
+        self.assertEqual(stats['users'], 2)
+        self.assertEqual(stats['items'], 1)
+        self.assertEqual(stats['looksByVibe'][0]['vibe'], 'party')
+        self.assertEqual(stats['recentLooks'][0]['event'], 'office party')
+        users = self.staff.get('/api/admin-panel/users/?q=ana').json()['users']
+        self.assertEqual([u['email'] for u in users], ['a@x.com'])
+        self.assertEqual(users[0]['items'], 1)
+
+    def test_deactivate_blocks_login_and_kills_session(self):
+        r = self.staff.patch(f'/api/admin-panel/users/{self.user.id}/', {'isActive': False}, format='json')
+        self.assertFalse(r.json()['user']['isActive'])
+        self.assertIsNone(self.client.get('/api/auth/me/').json()['user'])
+        r = APIClient().post('/api/auth/login/', {'email': 'a@x.com', 'password': PASSWORD}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_cannot_change_own_account(self):
+        r = self.staff.patch(f'/api/admin-panel/users/{self.admin.id}/', {'isAdmin': False}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.staff.delete(f'/api/admin-panel/users/{self.admin.id}/').status_code, 400)
+
+    def test_delete_user_removes_photos(self):
+        item = Item.objects.create(owner=self.user, name='Tee', category='top')
+        item.image.save('t.jpg', photo(), save=True)
+        path = item.image.path
+        self.assertEqual(self.staff.delete(f'/api/admin-panel/users/{self.user.id}/').status_code, 204)
+        self.assertFalse(User.objects.filter(email='a@x.com').exists())
+        self.assertFalse(os.path.exists(path))
+
+    def test_active_users_counted_from_app_opens(self):
+        self.client.get('/api/auth/me/')  # opening the app marks the member as seen
+        stats = self.staff.get('/api/admin-panel/stats/').json()
+        self.assertEqual(stats['activeThisWeek'], 2)
+        users = {u['email']: u for u in self.staff.get('/api/admin-panel/users/').json()['users']}
+        self.assertIsNotNone(users['a@x.com']['lastSeen'])
+
+    def test_member_complaint_reply_and_resolve(self):
+        r = self.client.post('/api/support/', {'topic': 'bug', 'message': 'Upload keeps failing'}, format='json')
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()['status'], 'open')
+        self.assertEqual(self.client.post('/api/support/', {'topic': 'contact', 'message': 'x'}, format='json').status_code, 400)
+
+        inbox = self.staff.get('/api/admin-panel/messages/?status=open').json()
+        self.assertEqual(inbox['open'], 1)
+        ticket = inbox['messages'][0]
+        self.assertEqual((ticket['email'], ticket['topicLabel'], ticket['userId']), ('a@x.com', 'Something is broken', self.user.id))
+        self.assertEqual(self.staff.get('/api/admin-panel/stats/').json()['openComplaints'], 1)
+
+        r = self.staff.patch(f'/api/admin-panel/messages/{ticket["id"]}/', {'reply': 'Fixed, try again!', 'status': 'resolved'}, format='json')
+        self.assertEqual(r.json()['message']['status'], 'resolved')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Fixed, try again!', mail.outbox[0].body)
+        self.assertEqual(mail.outbox[0].to, ['a@x.com'])
+
+        mine = self.client.get('/api/support/').json()['tickets']
+        self.assertEqual((mine[0]['reply'], mine[0]['status']), ('Fixed, try again!', 'resolved'))
+        self.assertEqual(self.staff.get('/api/admin-panel/messages/?status=open').json()['messages'], [])
+
+    def test_members_only_see_their_own_complaints(self):
+        other = User.objects.create_user('b@x.com', 'b@x.com', PASSWORD)
+        other_client = APIClient()
+        other_client.force_authenticate(other)
+        other_client.post('/api/support/', {'topic': 'account', 'message': 'Private'}, format='json')
+        self.assertEqual(self.client.get('/api/support/').json()['tickets'], [])
+        self.assertEqual(self.client.patch('/api/admin-panel/messages/1/', {'status': 'resolved'}, format='json').status_code, 403)
+
+    def test_messages(self):
+        APIClient().post('/api/contact/', {'name': 'Zed', 'email': 'z@x.com', 'message': 'Hi'}, format='json')
+        messages = self.staff.get('/api/admin-panel/messages/').json()['messages']
+        self.assertEqual(messages[0]['name'], 'Zed')
+        self.assertEqual(self.staff.delete(f'/api/admin-panel/messages/{messages[0]["id"]}/').status_code, 204)
+        self.assertEqual(self.staff.get('/api/admin-panel/messages/').json()['messages'], [])

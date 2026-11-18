@@ -8,7 +8,7 @@ import { api } from '../api/client';
 
 const fieldClass = 'w-full bg-transparent border-b border-white/50 focus:border-white outline-none py-2 text-sm placeholder-white/50';
 
-// Messages are stored by the API and readable in the Django admin (/admin)
+// Messages are stored by the API and answered from the Admin Panel's Complaints tab
 const ContactPage = () => {
     const { showToast } = useToast();
     const [form, setForm] = useState({ name: '', email: '', message: '' });
