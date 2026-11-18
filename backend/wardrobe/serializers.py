@@ -40,6 +40,11 @@ class ImageUrlField(serializers.ImageField):
         return value.url if value else None
 
 
+class OptionalBooleanField(serializers.BooleanField):
+    """Multipart uploads normally read a missing boolean as an unticked checkbox (False); here missing means "keep the default"."""
+    default_empty_html = serializers.empty
+
+
 class ItemSerializer(serializers.ModelSerializer):
     image = ImageUrlField(required=False, allow_null=True)
     removeImage = serializers.BooleanField(write_only=True, required=False, default=False)
@@ -48,6 +53,9 @@ class ItemSerializer(serializers.ModelSerializer):
     seasons = StringListField(allowed=SEASONS, required=False)
     tags = StringListField(required=False)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, coerce_to_string=False, required=False, allow_null=True)
+    cutout = serializers.SerializerMethodField()
+    useCutout = OptionalBooleanField(source='use_cutout', required=False)
+    cutoutAi = serializers.BooleanField(source='cutout_ai', read_only=True)
     wornCount = serializers.IntegerField(source='worn_count', read_only=True)
     lastWorn = serializers.DateTimeField(source='last_worn', read_only=True)
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
@@ -55,9 +63,12 @@ class ItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = Item
         fields = [
-            'id', 'name', 'category', 'image', 'removeImage', 'colors', 'tags', 'seasons', 'pattern',
+            'id', 'name', 'category', 'image', 'cutout', 'useCutout', 'cutoutAi', 'removeImage', 'colors', 'tags', 'seasons', 'pattern',
             'price', 'favorite', 'wornCount', 'lastWorn', 'createdAt',
         ]
+
+    def get_cutout(self, item):
+        return item.cutout.url if item.cutout else None
 
     def update(self, instance, validated_data):
         if validated_data.pop('removeImage', False) and 'image' not in validated_data:
@@ -82,14 +93,18 @@ class OwnItemsField(serializers.PrimaryKeyRelatedField):
 class LookSerializer(serializers.ModelSerializer):
     itemIds = OwnItemsField(source='items', many=True)
     image = serializers.SerializerMethodField()
+    collage = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
 
     class Meta:
         model = Look
-        fields = ['id', 'name', 'vibe', 'itemIds', 'reasoning', 'evaluation', 'image', 'createdAt']
+        fields = ['id', 'name', 'vibe', 'event', 'itemIds', 'reasoning', 'evaluation', 'image', 'collage', 'createdAt']
 
     def get_image(self, look):
         return look.image.url if look.image else None
+
+    def get_collage(self, look):
+        return look.collage.url if look.collage else None
 
     def validate_itemIds(self, items):
         if not items:
