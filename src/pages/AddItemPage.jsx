@@ -206,7 +206,7 @@ const AddItemPage = () => {
                                 <p className="font-script text-2xl mb-1">
                                     {isProcessing ? 'Developing your photo…' : 'Drop a photo here'}
                                 </p>
-                                <p className="text-xs uppercase tracking-widest text-white/60">One piece per photo · tap to browse</p>
+                                <p className="text-xs uppercase tracking-widest text-white/60">One piece per photo · plain background works best</p>
                             </div>
                         )}
                     </div>

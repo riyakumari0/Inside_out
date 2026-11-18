@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Heart, Pencil, Trash2, Sparkles, CalendarCheck, Shirt } from 'lucide-react';
-import PageShell from '../components/PageShell';
+import PageShell, { Pill } from '../components/PageShell';
 import { primaryButton, secondaryButton, ghostButton } from '../utils/styles';
 import useWardrobe from '../hooks/useWardrobe';
 import useToast from '../hooks/useToast';
@@ -20,10 +20,29 @@ const Detail = ({ label, children }) => (
 
 const ItemPage = () => {
     const { id } = useParams();
-    const { getItem, toggleFavorite, markWorn, removeItem } = useWardrobe();
+    const { getItem, toggleFavorite, markWorn, removeItem, updateItem, cleanPhoto } = useWardrobe();
     const { showToast } = useToast();
     const navigate = useNavigate();
+    const [isSwitching, setIsSwitching] = useState(false);
+    const [isCleaning, setIsCleaning] = useState(false);
     const item = getItem(id);
+
+    const clean = (undo) => {
+        setIsCleaning(true);
+        cleanPhoto(item.id, undo)
+            .then(() => showToast(undo ? 'Back to the cut-out from your photo' : 'Cleaned up ✨ only the piece is left'))
+            .catch(err => showToast(err.message))
+            .finally(() => setIsCleaning(false));
+    };
+
+    const setUseCutout = (useCutout) => {
+        if (isSwitching || useCutout === item.useCutout) return;
+        setIsSwitching(true);
+        updateItem(item.id, { useCutout })
+            .then(() => showToast(useCutout ? 'Outfit images use the cut-out' : 'Outfit images use the original photo'))
+            .catch(err => showToast(err.message))
+            .finally(() => setIsSwitching(false));
+    };
 
     if (!item) return <Navigate to="/dashboard" replace />;
 
@@ -120,6 +139,41 @@ const ItemPage = () => {
                         )}
                     </Detail>
                     {item.price != null && <Detail label="Price">$ {item.price.toFixed(2)}</Detail>}
+                    {item.image && (
+                        <Detail label="In outfit images">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-20 shrink-0 bg-[#ECECE9] flex items-center justify-center p-1 relative">
+                                    <img src={item.useCutout && item.cutout ? item.cutout : item.image} alt="" className={`max-w-full max-h-full object-contain ${isCleaning ? 'opacity-30' : ''}`} />
+                                    {isCleaning && (
+                                        <motion.span
+                                            className="absolute w-5 h-5 border-2 border-sage-dark border-t-transparent rounded-full"
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                                        />
+                                    )}
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        <Pill active={item.useCutout} onClick={() => setUseCutout(true)}>Cut-out</Pill>
+                                        <Pill active={!item.useCutout} onClick={() => setUseCutout(false)}>Original photo</Pill>
+                                    </div>
+                                    <p className="text-xs text-white/70 mb-3">
+                                        {item.cutoutAi
+                                            ? 'This cut-out was cleaned up by AI from your photo.'
+                                            : 'Still showing a mannequin, a model or a stand? Let AI redraw just this piece. Small details can change.'}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        disabled={isCleaning}
+                                        onClick={() => clean(item.cutoutAi)}
+                                        className="inline-flex items-center gap-2 border border-white/60 px-3 py-2 text-[0.65rem] uppercase tracking-widest hover:bg-white hover:text-charcoal transition disabled:opacity-50"
+                                    >
+                                        <Sparkles size={12} /> {isCleaning ? 'Cleaning up…' : item.cutoutAi ? 'Use my photo instead' : 'Clean up with AI'}
+                                    </button>
+                                </div>
+                            </div>
+                        </Detail>
+                    )}
 
                     <div className="flex flex-wrap gap-3 mt-8">
                         <Link to={`/wardrobe/${item.id}/edit`} className={secondaryButton}>
